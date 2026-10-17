@@ -210,11 +210,8 @@ impl Capturer {
             }
             feedback.destroy();
             manager.destroy();
-            let device = state.default_feedback.device()?;
-            state
-                .alloc
-                .use_device(device)
-                .context("wlr capture device")?;
+            let alloc = &mut state.alloc;
+            apply_main_device(&state.default_feedback, |dev| alloc.use_device(dev));
             tracing::debug!(node = %state.alloc.render_node().display(), "wlr capture device");
         }
         state.output = Some(wl_output);
@@ -423,6 +420,24 @@ impl DefaultFeedback {
         anyhow::ensure!(self.done, "incomplete linux-dmabuf feedback");
         self.main_device
             .context("missing or invalid linux-dmabuf main device")
+    }
+}
+
+/// Switches to the compositor's main device. On failure keeps the current node, as the
+/// ext path does, so a missing or unusable main device never stops capture.
+fn apply_main_device(
+    feedback: &DefaultFeedback,
+    use_device: impl FnOnce(u64) -> Result<()>,
+) -> bool {
+    match feedback
+        .device()
+        .and_then(|dev| use_device(dev).with_context(|| format!("dmabuf device {dev:#x}")))
+    {
+        Ok(()) => true,
+        Err(e) => {
+            tracing::warn!("wlr capture device: {e:#}; keeping current node");
+            false
+        }
     }
 }
 
@@ -1005,6 +1020,31 @@ mod tests {
         assert!(feedback.device().is_err());
         feedback.event(dmabuf_feedback::Event::Done);
         assert_eq!(feedback.device().unwrap(), 0x1234);
+    }
+
+    #[test]
+    fn main_device_errors_keep_current_node() {
+        let mut feedback = DefaultFeedback::default();
+        feedback.event(dmabuf_feedback::Event::Done);
+        let mut called = false;
+        assert!(!apply_main_device(&feedback, |_| {
+            called = true;
+            Ok(())
+        }));
+        assert!(!called);
+
+        feedback.event(dmabuf_feedback::Event::MainDevice {
+            device: 0x1234u64.to_ne_bytes().to_vec(),
+        });
+        assert!(!apply_main_device(&feedback, |_| anyhow::bail!(
+            "no render node"
+        )));
+        let mut got = None;
+        assert!(apply_main_device(&feedback, |dev| {
+            got = Some(dev);
+            Ok(())
+        }));
+        assert_eq!(got, Some(0x1234));
     }
 
     #[test]
