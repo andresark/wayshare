@@ -717,7 +717,7 @@ impl Session {
             Err(e) => return Err(e.context("parsing MediaStreamConfiguration")),
         };
         self.out.send(&reply).await?;
-        hp.answer_sent(self.id);
+        blocking(|| hp.answer_sent(self.id));
         Ok(())
     }
 

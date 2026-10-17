@@ -76,7 +76,7 @@ impl AudioSender {
             .name("hp-audio".into())
             .spawn(move || {
                 if let Err(e) = run(p, sock, &s) {
-                    warn!("HP audio stopped: {e:#}");
+                    warn!("HP audio stopped, continuing with video only: {e:#}");
                 }
             })?;
         Ok(Self {

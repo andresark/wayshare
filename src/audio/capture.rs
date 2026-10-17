@@ -9,6 +9,8 @@ use super::rtp::{CHANNELS, CLOCK_RATE, SAMPLES_PER_FRAME};
 use anyhow::{Result, ensure};
 
 pub const DEFAULT_MONITOR: &str = "@DEFAULT_MONITOR@";
+/// Lets fragsize set the source latency, as `pa_simple_new` did.
+const PA_STREAM_ADJUST_LATENCY: c_int = 0x2000;
 
 #[repr(C)]
 struct SampleSpec {
@@ -140,7 +142,12 @@ impl MonitorCapture {
             );
             ensure!(!cap.stream.is_null(), "pa_stream_new failed");
             ensure!(
-                (cap.api.pa_stream_connect_record)(cap.stream, dev.as_ptr(), &attr, 0) == 0,
+                (cap.api.pa_stream_connect_record)(
+                    cap.stream,
+                    dev.as_ptr(),
+                    &attr,
+                    PA_STREAM_ADJUST_LATENCY,
+                ) == 0,
                 "pa_stream_connect_record failed"
             );
         }
